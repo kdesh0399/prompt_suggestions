@@ -89,13 +89,27 @@ export default function HomePage() {
     setLoading(true);
     setError(null);
     setResponse(null);
-    try {
-      // Different prompts based on selected tag
-      const tagSpecificInstructions = tag === "overcompliant" 
-        ? `Focus specifically on creating edge cases where the model might be overcompliant with the focus area guidelines. These are scenarios where the model might be so focused on following the guidelines that it sacrifices other important aspects of a good response, such as helpfulness, naturalness, or addressing the user's actual needs. Look for situations where strict adherence to the focus area might actually lead to a worse user experience.`
-        : `Focus specifically on creating "near miss" edge cases where the model might just barely fall short of correctly following the focus area guidelines. These should be subtle, nuanced scenarios that test the boundaries of the focus area in ways that might be easy to miss. The goal is to identify situations where the model might think it's following the guidelines correctly, but is actually missing some subtle aspect of the focus area requirements.`;
+    
+    // Maximum number of retries
+    const MAX_RETRIES = 2;
+    let retryCount = 0;
+    let success = false;
+    
+    while (retryCount <= MAX_RETRIES && !success) {
+      try {
+        if (retryCount > 0) {
+          // Let the user know we're retrying
+          setError(`Request timed out. Retrying (${retryCount}/${MAX_RETRIES})...`);
+          // Wait 1 second before retrying
+          await new Promise(resolve => setTimeout(resolve, 1000));
+        }
         
-      const fullPrompt = `Objective: Analyze the 'Original User Prompt' and provide suggestions for tweaking it to specifically target edge cases **directly related to the provided 'Focus Area Definition'**. Focus on potential **${tag === "overcompliant" ? "overcompliant" : "near miss"}** model responses based on this analysis.
+        // Different prompts based on selected tag
+        const tagSpecificInstructions = tag === "overcompliant" 
+          ? `Focus specifically on creating edge cases where the model might be overcompliant with the focus area guidelines. These are scenarios where the model might be so focused on following the guidelines that it sacrifices other important aspects of a good response, such as helpfulness, naturalness, or addressing the user's actual needs. Look for situations where strict adherence to the focus area might actually lead to a worse user experience.`
+          : `Focus specifically on creating "near miss" edge cases where the model might just barely fall short of correctly following the focus area guidelines. These should be subtle, nuanced scenarios that test the boundaries of the focus area in ways that might be easy to miss. The goal is to identify situations where the model might think it's following the guidelines correctly, but is actually missing some subtle aspect of the focus area requirements.`;
+          
+        const fullPrompt = `Objective: Analyze the 'Original User Prompt' and provide suggestions for tweaking it to specifically target edge cases **directly related to the provided 'Focus Area Definition'**. Focus on potential **${tag === "overcompliant" ? "overcompliant" : "near miss"}** model responses based on this analysis.
 
 Inputs:
 
@@ -148,29 +162,59 @@ IMPORTANT: DO NOT use any markdown or formatting symbols. No asterisks (*), no b
 Revised Prompt Implementation:
 [A concise, focused revised prompt that implements ONLY the first suggestion. Keep it natural and within 2-3 sentences whenever possible.]`;
 
-      const res = await fetch("/api/gemini", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ prompt: fullPrompt }),
-      });
-      const data = await res.json();
-      if (!res.ok) {
-        setError(data.error || "Unknown error");
-      } else {
-        setResponse(data.response);
-        setEditableResponse(data.response);
-        setCurrentStep('suggestions');
+        const controller = new AbortController();
+        // Set a 45-second timeout for the fetch call
+        const timeoutId = setTimeout(() => controller.abort(), 45000);
+        
+        try {
+          const res = await fetch("/api/gemini", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ prompt: fullPrompt }),
+            signal: controller.signal
+          });
+          
+          clearTimeout(timeoutId);
+          
+          if (!res.ok) {
+            const data = await res.json();
+            throw new Error(data.error || `Server responded with status: ${res.status}`);
+          }
+          
+          const data = await res.json();
+          setResponse(data.response);
+          setEditableResponse(data.response);
+          setCurrentStep('suggestions');
+          success = true;
+        } catch (fetchError) {
+          clearTimeout(timeoutId);
+          
+          if (fetchError instanceof Error && fetchError.name === 'AbortError') {
+            // This was a timeout, so we'll retry if we haven't exceeded MAX_RETRIES
+            console.error('Fetch request timed out');
+            if (retryCount >= MAX_RETRIES) {
+              throw new Error("Request to the Gemini API timed out repeatedly. The service might be experiencing high traffic or outages. Please try again later.");
+            }
+          } else {
+            // This was another kind of error, not a timeout, so we'll throw it
+            throw fetchError;
+          }
+        }
+        
+        retryCount++;
+      } catch (err: unknown) {
+        // Use type assertion after checking type
+        if (err instanceof Error) {
+          setError(err.message || "Unknown error");
+        } else {
+          setError("Unknown error occurred");
+        }
+        success = false; // Ensure we exit the loop on errors
+        break;
       }
-    } catch (err: unknown) {
-      // Use type assertion after checking type
-      if (err instanceof Error) {
-        setError(err.message || "Unknown error");
-      } else {
-        setError("Unknown error occurred");
-      }
-    } finally {
-      setLoading(false);
     }
+    
+    setLoading(false);
   };
 
   const handleReset = () => {
