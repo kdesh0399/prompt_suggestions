@@ -1,6 +1,7 @@
 "use client";
 import React, { useState } from "react";
-import Image from "next/image";
+// Remove unused import
+// import Image from "next/image";
 import styles from "./page.module.css";
 
 // Display plain text without any styling or formatting
@@ -63,8 +64,13 @@ export default function HomePage() {
       } else {
         setSummary(data.summary);
       }
-    } catch (err: any) {
-      setSummaryError(err.message || "Unknown error");
+    } catch (err: unknown) {
+      // Use type assertion after checking type
+      if (err instanceof Error) {
+        setSummaryError(err.message || "Unknown error");
+      } else {
+        setSummaryError("Unknown error occurred");
+      }
     } finally {
       setFetchingSummary(false);
     }
@@ -155,8 +161,13 @@ Revised Prompt Implementation:
         setEditableResponse(data.response);
         setCurrentStep('suggestions');
       }
-    } catch (err: any) {
-      setError(err.message || "Unknown error");
+    } catch (err: unknown) {
+      // Use type assertion after checking type
+      if (err instanceof Error) {
+        setError(err.message || "Unknown error");
+      } else {
+        setError("Unknown error occurred");
+      }
     } finally {
       setLoading(false);
     }
