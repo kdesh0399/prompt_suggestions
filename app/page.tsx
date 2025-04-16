@@ -1,5 +1,5 @@
 "use client";
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 // Remove unused import
 // import Image from "next/image";
 import styles from "./page.module.css";
@@ -24,6 +24,19 @@ export default function HomePage() {
   const [currentStep, setCurrentStep] = useState<'input' | 'suggestions'>('input');
   const [isEditingPrompt, setIsEditingPrompt] = useState(false);
   const [editableResponse, setEditableResponse] = useState("");
+  
+  // Password protection states
+  const [isAuthenticated, setIsAuthenticated] = useState(false);
+  const [password, setPassword] = useState("");
+  const [passwordError, setPasswordError] = useState<string | null>(null);
+  
+  // Check for stored authentication on component mount
+  useEffect(() => {
+    const authStatus = localStorage.getItem('gemini_authenticated');
+    if (authStatus === 'true') {
+      setIsAuthenticated(true);
+    }
+  }, []);
 
   // Theme colors
   const colors = {
@@ -46,6 +59,26 @@ export default function HomePage() {
     responseBg: "#eff6ff",
     summaryBg: "#f1f5f9",
   };
+  
+  // Clean the focus area ID by removing square brackets if present
+  const cleanFocusId = (id: string) => {
+    return id.replace(/\[|\]/g, '').trim();
+  };
+
+  const handlePasswordSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    setPasswordError(null);
+    
+    // Simple password check - in a real app, this would be handled server-side
+    const correctPassword = "Gemini2024"; // This would normally be stored securely
+    
+    if (password === correctPassword) {
+      setIsAuthenticated(true);
+      localStorage.setItem('gemini_authenticated', 'true');
+    } else {
+      setPasswordError("Incorrect password. Please try again.");
+    }
+  };
 
   const handleIdSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -56,8 +89,12 @@ export default function HomePage() {
     setPrompt("");
     setCurrentStep('input');
     setFetchingSummary(true);
+    
+    // Clean the focus ID to remove square brackets if present
+    const cleanedId = cleanFocusId(focusId);
+    
     try {
-      const res = await fetch(`/api/focus-summary?id=${encodeURIComponent(focusId.trim())}`);
+      const res = await fetch(`/api/focus-summary?id=${encodeURIComponent(cleanedId)}`);
       const data = await res.json();
       if (!res.ok) {
         setSummaryError(data.error || "Unknown error");
@@ -224,6 +261,74 @@ Revised Prompt Implementation:
     setCurrentStep('input');
   };
 
+  const handleLogout = () => {
+    setIsAuthenticated(false);
+    localStorage.removeItem('gemini_authenticated');
+  };
+
+  // Render password form if not authenticated
+  if (!isAuthenticated) {
+    return (
+      <div style={{ minHeight: "100vh", background: colors.background, display: "flex", alignItems: "center", justifyContent: "center", padding: "20px 0" }}>
+        <div style={{
+          width: "100%",
+          maxWidth: 400,
+          background: colors.cardBg,
+          borderRadius: 16,
+          boxShadow: "0 4px 24px rgba(0,0,0,0.05)",
+          padding: 32,
+          display: "flex",
+          flexDirection: "column",
+          gap: 24,
+        }}>
+          <h2 style={{ textAlign: "center", fontWeight: 700, fontSize: 28, margin: 0, color: colors.text }}>Gemini Focus Area Test</h2>
+          <p style={{ textAlign: "center", color: colors.textLight, margin: 0 }}>Please enter the password to continue</p>
+          
+          <form onSubmit={handlePasswordSubmit} style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+            <input
+              type="password"
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+              placeholder="Enter password"
+              style={{
+                width: "100%",
+                padding: 12,
+                fontSize: 17,
+                borderRadius: 8,
+                border: `1px solid ${colors.inputBorder}`,
+                background: colors.inputBg,
+                color: colors.text,
+                marginBottom: 4,
+                boxSizing: "border-box"
+              }}
+              required
+            />
+            
+            <button
+              type="submit"
+              style={{
+                padding: "12px 0",
+                fontSize: 18,
+                fontWeight: 600,
+                borderRadius: 8,
+                border: "none",
+                background: colors.primary,
+                color: "white",
+                cursor: "pointer",
+                transition: "background 0.2s",
+                boxShadow: "0 2px 8px rgba(37, 99, 235, 0.25)"
+              }}
+            >
+              Login
+            </button>
+          </form>
+          
+          {passwordError && <div style={{ color: "white", background: colors.error, padding: 12, borderRadius: 8, fontWeight: 500 }}>{passwordError}</div>}
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div style={{ minHeight: "100vh", background: colors.background, display: "flex", alignItems: "center", justifyContent: "center", padding: "20px 0" }}>
       <div style={{
@@ -237,7 +342,25 @@ Revised Prompt Implementation:
         flexDirection: "column",
         gap: 24,
       }}>
-        <h2 style={{ textAlign: "center", fontWeight: 700, fontSize: 28, margin: 0, color: colors.text }}>Gemini Focus Area Test</h2>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+          <h2 style={{ textAlign: "center", fontWeight: 700, fontSize: 28, margin: 0, color: colors.text }}>Gemini Focus Area Test</h2>
+          <button 
+            onClick={handleLogout}
+            style={{
+              background: "transparent",
+              border: "none",
+              color: colors.textLight,
+              fontSize: 14,
+              cursor: "pointer",
+              padding: "4px 8px",
+              borderRadius: 4,
+              transition: "background 0.2s",
+            }}
+            title="Logout"
+          >
+            Logout
+          </button>
+        </div>
         
         {/* Step 1: Focus Area ID and Prompt Input */}
         {currentStep === 'input' && (
@@ -249,7 +372,7 @@ Revised Prompt Implementation:
                 type="text"
                 value={focusId}
                 onChange={e => setFocusId(e.target.value)}
-                placeholder="Enter focus area ID (e.g. v48c)"
+                placeholder="Enter focus area ID (e.g. ^bz0o or [^bz0o])"
                 style={{
                   width: "100%",
                   padding: 12,
@@ -264,6 +387,9 @@ Revised Prompt Implementation:
                 disabled={fetchingSummary}
                 required
               />
+              <span style={{ fontSize: 13, color: colors.textLight, marginBottom: 8 }}>
+                You can enter the ID with or without square brackets (e.g., ^bz0o or [^bz0o])
+              </span>
               <button
                 type="submit"
                 disabled={fetchingSummary || !focusId.trim()}

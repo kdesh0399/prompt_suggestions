@@ -11,6 +11,11 @@ function parseCSVLine(line: string) {
   return { id: match[1].replace(/^\^/, ''), summary: match[2] };
 }
 
+// Clean the focus area ID by removing square brackets and caret if present
+function cleanFocusId(id: string) {
+  return id.replace(/\[|\]|\^/g, '').trim();
+}
+
 export async function GET(req: NextRequest) {
   const { searchParams } = new URL(req.url);
   const id = searchParams.get('id');
@@ -21,7 +26,10 @@ export async function GET(req: NextRequest) {
   try {
     const file = fs.readFileSync(CSV_PATH, 'utf8');
     const lines = file.split(/\r?\n/).slice(1); // skip header
-    const cleanInputId = id.replace(/^\^/, '').toLowerCase();
+    
+    // Clean the input ID by removing square brackets and the caret
+    const cleanInputId = cleanFocusId(id).toLowerCase();
+    
     for (const line of lines) {
       if (!line.trim()) continue;
       const parsed = parseCSVLine(line);
