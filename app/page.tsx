@@ -1,95 +1,505 @@
+"use client";
+import React, { useState } from "react";
 import Image from "next/image";
 import styles from "./page.module.css";
 
-export default function Home() {
-  return (
-    <div className={styles.page}>
-      <main className={styles.main}>
-        <Image
-          className={styles.logo}
-          src="/next.svg"
-          alt="Next.js logo"
-          width={180}
-          height={38}
-          priority
-        />
-        <ol>
-          <li>
-            Get started by editing <code>app/page.tsx</code>.
-          </li>
-          <li>Save and see your changes instantly.</li>
-        </ol>
+// Display plain text without any styling or formatting
+function parseMarkdown(text: string) {
+  if (!text) return "";
+  // Simply put the raw text in a pre tag to preserve spacing and line breaks
+  return `<pre style="font-family: inherit; white-space: pre-wrap; margin: 0; color: #1e293b;">${text}</pre>`;
+}
 
-        <div className={styles.ctas}>
-          <a
-            className={styles.primary}
-            href="https://vercel.com/new?utm_source=create-next-app&utm_medium=appdir-template&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            <Image
-              className={styles.logo}
-              src="/vercel.svg"
-              alt="Vercel logomark"
-              width={20}
-              height={20}
+export default function HomePage() {
+  const [focusId, setFocusId] = useState("");
+  const [summary, setSummary] = useState<string | null>(null);
+  const [summaryError, setSummaryError] = useState<string | null>(null);
+  const [prompt, setPrompt] = useState("");
+  const [response, setResponse] = useState<string | null>(null);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [fetchingSummary, setFetchingSummary] = useState(false);
+  const [tag, setTag] = useState<string>("");
+  const [currentStep, setCurrentStep] = useState<'input' | 'suggestions'>('input');
+  const [isEditingPrompt, setIsEditingPrompt] = useState(false);
+  const [editableResponse, setEditableResponse] = useState("");
+
+  // Theme colors
+  const colors = {
+    primary: "#2563eb",
+    primaryHover: "#1d4ed8",
+    primaryLight: "#dbeafe",
+    background: "#f8fafc",
+    cardBg: "#ffffff",
+    inputBg: "#f1f5f9",
+    inputBorder: "#cbd5e1",
+    text: "#1e293b",
+    textLight: "#64748b",
+    accent: "#0ea5e9",
+    error: "#ef4444",
+    errorBg: "#fee2e2",
+    success: "#10b981",
+    successBg: "#d1fae5",
+    disabled: "#cbd5e1",
+    disabledText: "#64748b",
+    responseBg: "#eff6ff",
+    summaryBg: "#f1f5f9",
+  };
+
+  const handleIdSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setSummary(null);
+    setSummaryError(null);
+    setResponse(null);
+    setError(null);
+    setPrompt("");
+    setCurrentStep('input');
+    setFetchingSummary(true);
+    try {
+      const res = await fetch(`/api/focus-summary?id=${encodeURIComponent(focusId.trim())}`);
+      const data = await res.json();
+      if (!res.ok) {
+        setSummaryError(data.error || "Unknown error");
+      } else {
+        setSummary(data.summary);
+      }
+    } catch (err: any) {
+      setSummaryError(err.message || "Unknown error");
+    } finally {
+      setFetchingSummary(false);
+    }
+  };
+
+  const handlePromptSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!summary) return;
+    
+    // Validate that a tag is selected
+    if (!tag) {
+      setError("Please select either 'Overcompliant' or 'Near Miss' tag before generating suggestions.");
+      return;
+    }
+    
+    setLoading(true);
+    setError(null);
+    setResponse(null);
+    try {
+      // Different prompts based on selected tag
+      const tagSpecificInstructions = tag === "overcompliant" 
+        ? `Focus specifically on creating edge cases where the model might be overcompliant with the focus area guidelines. These are scenarios where the model might be so focused on following the guidelines that it sacrifices other important aspects of a good response, such as helpfulness, naturalness, or addressing the user's actual needs. Look for situations where strict adherence to the focus area might actually lead to a worse user experience.`
+        : `Focus specifically on creating "near miss" edge cases where the model might just barely fall short of correctly following the focus area guidelines. These should be subtle, nuanced scenarios that test the boundaries of the focus area in ways that might be easy to miss. The goal is to identify situations where the model might think it's following the guidelines correctly, but is actually missing some subtle aspect of the focus area requirements.`;
+        
+      const fullPrompt = `Objective: Analyze the 'Original User Prompt' and provide suggestions for tweaking it to specifically target edge cases **directly related to the provided 'Focus Area Definition'**. Focus on potential **${tag === "overcompliant" ? "overcompliant" : "near miss"}** model responses based on this analysis.
+
+Inputs:
+
+Focus Area Definition: ${summary}
+Original User Prompt: ${prompt}
+Tag: ${tag}
+
+Instructions:
+
+Your task is to help create a prompt that will effectively test challenging aspects and edge cases **within the specific guidelines of the 'Focus Area Definition'**. Use the **Original User Prompt** as a starting point and suggest modifications designed to elicit **${tag === "overcompliant" ? "overcompliant" : "near miss"}** responses from the model, according to the selected **Tag**.
+
+${tagSpecificInstructions}
+
+To do this:
+
+1.  Analyze the Original User Prompt **in the context of** the Focus Area Definition.
+2.  Provide 3-4 specific suggestions for how the prompt could be modified to better target **${tag === "overcompliant" ? "overcompliant" : "near miss"}** edge cases **defined by the Focus Area Definition**.
+3.  For each suggestion, explain your reasoning clearly: **Which specific aspect** of the Focus Area Definition does the suggestion target? **How** does this modification create an effective test for **${tag === "overcompliant" ? "overcompliant" : "near miss"}** responses in relation to that aspect?
+4.  After your suggestions, provide one complete revised prompt that implements ONLY the first suggestion.
+
+Your suggestions should aim to:
+- Identify subtle aspects **of the focus area** that might trigger **${tag === "overcompliant" ? "overcompliant" : "near miss"}** responses.
+- Create realistic scenarios that test the boundaries **of the focus area guidelines**.
+- Maintain a natural, conversational tone that a real user might use.
+- Avoid being overtly adversarial or artificial-sounding.
+
+**CRITICAL**: Ensure every suggestion and its reasoning are tightly coupled to the provided **Focus Area Definition** and the chosen **${tag}** strategy.
+
+Output Format:
+Please follow this EXACT format for your response with NO formatting whatsoever:
+
+Suggestions for Targeting ${tag === "overcompliant" ? "Overcompliant" : "Near Miss"} Edge Cases:
+
+1. [First suggestion text in plain text]
+
+   Reasoning: [Explanation indented with spaces]
+
+2. [Second suggestion text in plain text]
+
+   Reasoning: [Explanation indented with spaces]
+
+3. [Third suggestion text in plain text]
+
+   Reasoning: [Explanation indented with spaces]
+
+[If you add a fourth suggestion, follow the same exact format]
+
+IMPORTANT: DO NOT use any markdown or formatting symbols. No asterisks (*), no bold text markup (**), no other special characters for formatting. Return COMPLETELY plain text only.
+
+Revised Prompt Implementation:
+[A concise, focused revised prompt that implements ONLY the first suggestion. Keep it natural and within 2-3 sentences whenever possible.]`;
+
+      const res = await fetch("/api/gemini", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ prompt: fullPrompt }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        setError(data.error || "Unknown error");
+      } else {
+        setResponse(data.response);
+        setEditableResponse(data.response);
+        setCurrentStep('suggestions');
+      }
+    } catch (err: any) {
+      setError(err.message || "Unknown error");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleReset = () => {
+    setResponse(null);
+    setEditableResponse("");
+    setIsEditingPrompt(false);
+    setCurrentStep('input');
+  };
+
+  return (
+    <div style={{ minHeight: "100vh", background: colors.background, display: "flex", alignItems: "center", justifyContent: "center", padding: "20px 0" }}>
+      <div style={{
+        width: "100%",
+        maxWidth: 500,
+        background: colors.cardBg,
+        borderRadius: 16,
+        boxShadow: "0 4px 24px rgba(0,0,0,0.05)",
+        padding: 32,
+        display: "flex",
+        flexDirection: "column",
+        gap: 24,
+      }}>
+        <h2 style={{ textAlign: "center", fontWeight: 700, fontSize: 28, margin: 0, color: colors.text }}>Gemini Focus Area Test</h2>
+        
+        {/* Step 1: Focus Area ID and Prompt Input */}
+        {currentStep === 'input' && (
+          <>
+            <form onSubmit={handleIdSubmit} style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+              <label htmlFor="focusId" style={{ fontWeight: 500, color: colors.text }}>Focus Area ID</label>
+              <input
+                id="focusId"
+                type="text"
+                value={focusId}
+                onChange={e => setFocusId(e.target.value)}
+                placeholder="Enter focus area ID (e.g. v48c)"
+                style={{
+                  width: "100%",
+                  padding: 12,
+                  fontSize: 17,
+                  borderRadius: 8,
+                  border: `1px solid ${colors.inputBorder}`,
+                  background: colors.inputBg,
+                  color: colors.text,
+                  marginBottom: 4,
+                  boxSizing: "border-box"
+                }}
+                disabled={fetchingSummary}
+                required
+              />
+              <button
+                type="submit"
+                disabled={fetchingSummary || !focusId.trim()}
+                style={{
+                  padding: "10px 0",
+                  fontSize: 16,
+                  fontWeight: 600,
+                  borderRadius: 8,
+                  border: "none",
+                  background: fetchingSummary || !focusId.trim() ? colors.disabled : colors.primary,
+                  color: fetchingSummary || !focusId.trim() ? colors.disabledText : "white",
+                  cursor: fetchingSummary || !focusId.trim() ? "not-allowed" : "pointer",
+                  transition: "background 0.2s"
+                }}
+              >
+                {fetchingSummary ? "Looking up..." : "Lookup Focus Area"}
+              </button>
+            </form>
+            {summaryError && <div style={{ color: "white", background: colors.error, padding: 12, borderRadius: 8, fontWeight: 500 }}>{summaryError}</div>}
+            {summary && (
+              <div style={{ 
+                background: colors.summaryBg, 
+                borderRadius: 10, 
+                padding: 16, 
+                color: colors.text, 
+                fontSize: 16, 
+                lineHeight: 1.5, 
+                boxShadow: "0 1px 4px rgba(0,0,0,0.03)",
+                maxHeight: "250px",
+                overflowY: "auto",
+                position: "relative"
+              }}>
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                  <strong style={{ color: colors.accent }}>Focus Area Summary:</strong>
+                  {summary && summary.length > 200 && (
+                    <span style={{ fontSize: 13, color: colors.textLight, fontStyle: "italic" }}>
+                      Scroll to see more
+                    </span>
+                  )}
+                </div>
+                <div style={{ marginTop: 8 }}>{summary}</div>
+                <div style={{
+                  position: "absolute",
+                  bottom: 0,
+                  left: 0,
+                  right: 0,
+                  height: "30px",
+                  background: "linear-gradient(to bottom, rgba(241, 245, 249, 0), rgba(241, 245, 249, 0.9))",
+                  pointerEvents: "none",
+                  borderBottomLeftRadius: 10,
+                  borderBottomRightRadius: 10,
+                  display: summary && summary.length > 200 ? "block" : "none"
+                }}></div>
+              </div>
+            )}
+            <form onSubmit={handlePromptSubmit} style={{ display: "flex", flexDirection: "column", gap: 16 }}>
+              <label htmlFor="prompt" style={{ fontWeight: 500, color: colors.text, marginBottom: 4 }}>Prompt</label>
+              <textarea
+                id="prompt"
+                value={prompt}
+                onChange={e => setPrompt(e.target.value)}
+                rows={5}
+                style={{
+                  width: "100%",
+                  padding: 16,
+                  fontSize: 17,
+                  borderRadius: 10,
+                  border: `1px solid ${colors.inputBorder}`,
+                  outline: "none",
+                  resize: "vertical",
+                  background: colors.inputBg,
+                  color: colors.text,
+                  boxSizing: "border-box"
+                }}
+                placeholder="Enter your prompt here..."
+                required
+                disabled={!summary || loading}
+              />
+              <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+                <span style={{ fontWeight: 500, color: colors.text }}>Tag (Required)</span>
+                <div style={{ display: "flex", gap: 10 }}>
+                  <label style={{
+                    flex: 1,
+                    display: "flex",
+                    alignItems: "center",
+                    gap: 8,
+                    fontWeight: 400,
+                    color: tag === "overcompliant" ? colors.primary : colors.text,
+                    background: tag === "overcompliant" ? colors.primaryLight : colors.inputBg,
+                    padding: "10px 12px",
+                    borderRadius: 8,
+                    border: `1px solid ${tag === "overcompliant" ? colors.primary : colors.inputBorder}`,
+                    cursor: "pointer",
+                    transition: "all 0.2s"
+                  }}>
+                    <input
+                      type="radio"
+                      name="tag"
+                      value="overcompliant"
+                      checked={tag === "overcompliant"}
+                      onChange={() => { setTag("overcompliant"); setError(null); }}
+                      style={{ accentColor: colors.primary }}
+                    />
+                    Overcompliant
+                  </label>
+                  <label style={{
+                    flex: 1,
+                    display: "flex",
+                    alignItems: "center",
+                    gap: 8,
+                    fontWeight: 400,
+                    color: tag === "nearmiss" ? colors.primary : colors.text,
+                    background: tag === "nearmiss" ? colors.primaryLight : colors.inputBg,
+                    padding: "10px 12px",
+                    borderRadius: 8,
+                    border: `1px solid ${tag === "nearmiss" ? colors.primary : colors.inputBorder}`,
+                    cursor: "pointer",
+                    transition: "all 0.2s"
+                  }}>
+                    <input
+                      type="radio"
+                      name="tag"
+                      value="nearmiss"
+                      checked={tag === "nearmiss"}
+                      onChange={() => { setTag("nearmiss"); setError(null); }}
+                      style={{ accentColor: colors.primary }}
+                    />
+                    Near Miss
+                  </label>
+                </div>
+                <span style={{ fontSize: 13, color: colors.textLight, marginTop: 4 }}>
+                  {tag === "overcompliant" ? "Suggests prompts where the model follows rules too strictly."
+                   : tag === "nearmiss" ? "Suggests prompts where the model subtly fails to follow rules."
+                   : "Select a tag to get started."}
+                </span>
+              </div>
+              <button
+                type="submit"
+                disabled={loading || !prompt.trim() || !summary}
+                style={{
+                  padding: "12px 0",
+                  fontSize: 18,
+                  fontWeight: 600,
+                  borderRadius: 8,
+                  border: "none",
+                  background: loading || !prompt.trim() || !summary ? colors.disabled : colors.primary,
+                  color: loading || !prompt.trim() || !summary ? colors.disabledText : "white",
+                  cursor: loading || !prompt.trim() || !summary ? "not-allowed" : "pointer",
+                  transition: "background 0.2s",
+                  boxShadow: loading || !prompt.trim() || !summary ? "none" : "0 2px 8px rgba(37, 99, 235, 0.25)"
+                }}
+              >
+                {loading ? (
+                  <span style={{ display: "inline-flex", alignItems: "center", gap: 8, justifyContent: "center" }}>
+                    <span className="spinner" style={{
+                      width: 18,
+                      height: 18,
+                      border: "3px solid rgba(255,255,255,0.3)",
+                      borderTop: "3px solid white",
+                      borderRadius: "50%",
+                      display: "inline-block",
+                      animation: "spin 1s linear infinite"
+                    }} />
+                    Loading...
+                  </span>
+                ) : "Generate Edge Case Suggestions"}
+              </button>
+            </form>
+            {error && <div style={{ color: "white", background: colors.error, padding: 12, borderRadius: 8, fontWeight: 500 }}>{error}</div>}
+          </>
+        )}
+
+        {/* Step 2: Edge Case Suggestions */}
+        {currentStep === 'suggestions' && response && (
+          <>
+            {/* Display Focus Area and Original Prompt */} 
+            {summary && (
+              <div style={{
+                background: colors.summaryBg,
+                borderRadius: 10,
+                padding: 16,
+                color: colors.text,
+                fontSize: 14,
+                lineHeight: 1.4,
+                boxShadow: "0 1px 4px rgba(0,0,0,0.03)",
+                maxHeight: "150px",
+                overflowY: "auto",
+                marginBottom: 16
+              }}>
+                <strong style={{ color: colors.accent }}>Focus Area Summary:</strong>
+                <div style={{ marginTop: 8 }}>{summary}</div>
+              </div>
+            )}
+            {prompt && (
+              <div style={{
+                background: colors.summaryBg,
+                borderRadius: 10,
+                padding: 16,
+                color: colors.text,
+                fontSize: 14,
+                lineHeight: 1.4,
+                boxShadow: "0 1px 4px rgba(0,0,0,0.03)",
+                marginBottom: 24
+              }}>
+                <strong style={{ color: colors.accent }}>Original Prompt:</strong>
+                <div style={{ marginTop: 8, whiteSpace: 'pre-wrap' }}>{prompt}</div>
+              </div>
+            )}
+            
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+              <h3 style={{ margin: 0, color: colors.text }}>
+                {tag === "overcompliant" ? "Overcompliant" : "Near Miss"} Edge Case Suggestions
+              </h3>
+              <button 
+                onClick={handleReset}
+                style={{
+                  padding: "8px 16px",
+                  fontSize: 14,
+                  borderRadius: 6,
+                  background: "transparent",
+                  border: `1px solid ${colors.inputBorder}`,
+                  color: colors.text,
+                  cursor: "pointer"
+                }}
+              >
+                Start Over
+              </button>
+            </div>
+            
+            {/* Completely simplified raw text output */}
+            <div style={{
+              padding: "16px",
+              fontSize: "15px",
+              overflowY: "auto",
+              maxHeight: "400px",
+              background: "#ffffff",
+              borderRadius: "8px",
+              border: "1px solid #e2e8f0",
+              lineHeight: "1.5"
+            }} 
+              dangerouslySetInnerHTML={{ __html: parseMarkdown(editableResponse) }}
             />
-            Deploy now
-          </a>
-          <a
-            href="https://nextjs.org/docs?utm_source=create-next-app&utm_medium=appdir-template&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-            className={styles.secondary}
-          >
-            Read our docs
-          </a>
-        </div>
-      </main>
-      <footer className={styles.footer}>
-        <a
-          href="https://nextjs.org/learn?utm_source=create-next-app&utm_medium=appdir-template&utm_campaign=create-next-app"
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          <Image
-            aria-hidden
-            src="/file.svg"
-            alt="File icon"
-            width={16}
-            height={16}
-          />
-          Learn
-        </a>
-        <a
-          href="https://vercel.com/templates?framework=next.js&utm_source=create-next-app&utm_medium=appdir-template&utm_campaign=create-next-app"
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          <Image
-            aria-hidden
-            src="/window.svg"
-            alt="Window icon"
-            width={16}
-            height={16}
-          />
-          Examples
-        </a>
-        <a
-          href="https://nextjs.org?utm_source=create-next-app&utm_medium=appdir-template&utm_campaign=create-next-app"
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          <Image
-            aria-hidden
-            src="/globe.svg"
-            alt="Globe icon"
-            width={16}
-            height={16}
-          />
-          Go to nextjs.org →
-        </a>
-      </footer>
+            
+            <button
+              onClick={handleReset}
+              style={{
+                padding: "12px 0",
+                fontSize: 18,
+                fontWeight: 600,
+                borderRadius: 8,
+                border: "none",
+                background: colors.primary,
+                color: "white",
+                cursor: "pointer",
+                transition: "background 0.2s",
+                boxShadow: "0 2px 8px rgba(37, 99, 235, 0.25)"
+              }}
+            >
+              Create New Suggestion
+            </button>
+          </>
+        )}
+
+        <style>{`
+          @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+          }
+          
+          /* Custom scrollbar styling */
+          div::-webkit-scrollbar {
+            width: 10px;
+            height: 10px;
+          }
+          
+          div::-webkit-scrollbar-track {
+            background: #f1f5f9;
+            border-radius: 8px;
+          }
+          
+          div::-webkit-scrollbar-thumb {
+            background: #cbd5e1;
+            border-radius: 8px;
+            border: 2px solid #f1f5f9;
+          }
+          
+          div::-webkit-scrollbar-thumb:hover {
+            background: #94a3b8;
+          }
+        `}</style>
+      </div>
     </div>
   );
 }
