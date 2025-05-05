@@ -25,6 +25,11 @@ export default function HomePage() {
   const [isEditingPrompt, setIsEditingPrompt] = useState(false);
   const [editableResponse, setEditableResponse] = useState("");
   
+  // State for tracking the selected tag during generation
+  const [selectedTagForGeneration, setSelectedTagForGeneration] = useState<string>("");
+  // State for tracking the abort controller
+  const [abortController, setAbortController] = useState<AbortController | null>(null);
+  
   // Password protection states
   const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [password, setPassword] = useState("");
@@ -113,6 +118,27 @@ export default function HomePage() {
     }
   };
 
+  // Handle tag change to ensure consistency during generation
+  const handleTagChange = (newTag: string) => {
+    setTag(newTag);
+    setError(null);
+    
+    // Only update the selectedTagForGeneration if we're not currently loading
+    if (!loading) {
+      setSelectedTagForGeneration(newTag);
+    }
+  };
+  
+  // Handle cancellation of generation
+  const handleCancelGeneration = () => {
+    if (abortController) {
+      abortController.abort();
+      setAbortController(null);
+    }
+    setLoading(false);
+    setError("Generation cancelled by user.");
+  };
+
   const handlePromptSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!summary) return;
@@ -126,6 +152,9 @@ export default function HomePage() {
     setLoading(true);
     setError(null);
     setResponse(null);
+    
+    // Set the selected tag for this generation
+    setSelectedTagForGeneration(tag);
     
     // Maximum number of retries
     const MAX_RETRIES = 2;
@@ -141,44 +170,44 @@ export default function HomePage() {
           await new Promise(resolve => setTimeout(resolve, 1000));
         }
         
-        // Different prompts based on selected tag
-        const tagSpecificInstructions = tag === "overcompliant" 
+        // Different prompts based on selected tag for generation (using the stored value)
+        const tagSpecificInstructions = selectedTagForGeneration === "overcompliant" 
           ? `Focus specifically on creating edge cases where the model might be overcompliant with the focus area guidelines. These are scenarios where the model might be so focused on following the guidelines that it sacrifices other important aspects of a good response, such as helpfulness, naturalness, or addressing the user's actual needs. Look for situations where strict adherence to the focus area might actually lead to a worse user experience.`
           : `Focus specifically on creating "near miss" edge cases where the model might just barely fall short of correctly following the focus area guidelines. These should be subtle, nuanced scenarios that test the boundaries of the focus area in ways that might be easy to miss. The goal is to identify situations where the model might think it's following the guidelines correctly, but is actually missing some subtle aspect of the focus area requirements.`;
           
-        const fullPrompt = `Objective: Analyze the 'Original User Prompt' and provide suggestions for tweaking it to specifically target edge cases **directly related to the provided 'Focus Area Definition'**. Focus on potential **${tag === "overcompliant" ? "overcompliant" : "near miss"}** model responses based on this analysis.
+        const fullPrompt = `Objective: Analyze the 'Original User Prompt' and provide suggestions for tweaking it to specifically target edge cases **directly related to the provided 'Focus Area Definition'**. Focus on potential **${selectedTagForGeneration === "overcompliant" ? "overcompliant" : "near miss"}** model responses based on this analysis.
 
 Inputs:
 
 Focus Area Definition: ${summary}
 Original User Prompt: ${prompt}
-Tag: ${tag}
+Tag: ${selectedTagForGeneration}
 
 Instructions:
 
-Your task is to help create a prompt that will effectively test challenging aspects and edge cases **within the specific guidelines of the 'Focus Area Definition'**. Use the **Original User Prompt** as a starting point and suggest modifications designed to elicit **${tag === "overcompliant" ? "overcompliant" : "near miss"}** responses from the model, according to the selected **Tag**.
+Your task is to help create a prompt that will effectively test challenging aspects and edge cases **within the specific guidelines of the 'Focus Area Definition'**. Use the **Original User Prompt** as a starting point and suggest modifications designed to elicit **${selectedTagForGeneration === "overcompliant" ? "overcompliant" : "near miss"}** responses from the model, according to the selected **Tag**.
 
 ${tagSpecificInstructions}
 
 To do this:
 
 1.  Analyze the Original User Prompt **in the context of** the Focus Area Definition.
-2.  Provide 3-4 specific suggestions for how the prompt could be modified to better target **${tag === "overcompliant" ? "overcompliant" : "near miss"}** edge cases **defined by the Focus Area Definition**.
-3.  For each suggestion, explain your reasoning clearly: **Which specific aspect** of the Focus Area Definition does the suggestion target? **How** does this modification create an effective test for **${tag === "overcompliant" ? "overcompliant" : "near miss"}** responses in relation to that aspect?
+2.  Provide 3-4 specific suggestions for how the prompt could be modified to better target **${selectedTagForGeneration === "overcompliant" ? "overcompliant" : "near miss"}** edge cases **defined by the Focus Area Definition**.
+3.  For each suggestion, explain your reasoning clearly: **Which specific aspect** of the Focus Area Definition does the suggestion target? **How** does this modification create an effective test for **${selectedTagForGeneration === "overcompliant" ? "overcompliant" : "near miss"}** responses in relation to that aspect?
 4.  After your suggestions, provide one complete revised prompt that implements ONLY the first suggestion.
 
 Your suggestions should aim to:
-- Identify subtle aspects **of the focus area** that might trigger **${tag === "overcompliant" ? "overcompliant" : "near miss"}** responses.
+- Identify subtle aspects **of the focus area** that might trigger **${selectedTagForGeneration === "overcompliant" ? "overcompliant" : "near miss"}** responses.
 - Create realistic scenarios that test the boundaries **of the focus area guidelines**.
 - Maintain a natural, conversational tone that a real user might use.
 - Avoid being overtly adversarial or artificial-sounding.
 
-**CRITICAL**: Ensure every suggestion and its reasoning are tightly coupled to the provided **Focus Area Definition** and the chosen **${tag}** strategy.
+**CRITICAL**: Ensure every suggestion and its reasoning are tightly coupled to the provided **Focus Area Definition** and the chosen **${selectedTagForGeneration}** strategy.
 
 Output Format:
 Please follow this EXACT format for your response with NO formatting whatsoever:
 
-Suggestions for Targeting ${tag === "overcompliant" ? "Overcompliant" : "Near Miss"} Edge Cases:
+Suggestions for Targeting ${selectedTagForGeneration === "overcompliant" ? "Overcompliant" : "Near Miss"} Edge Cases:
 
 1. [First suggestion text in plain text]
 
@@ -200,6 +229,9 @@ Revised Prompt Implementation:
 [A concise, focused revised prompt that implements ONLY the first suggestion. Keep it natural and within 2-3 sentences whenever possible.]`;
 
         const controller = new AbortController();
+        // Store the controller for potential cancellation
+        setAbortController(controller);
+        
         // Set a 45-second timeout for the fetch call
         const timeoutId = setTimeout(() => controller.abort(), 45000);
         
@@ -226,16 +258,28 @@ Revised Prompt Implementation:
         } catch (fetchError) {
           clearTimeout(timeoutId);
           
-          if (fetchError instanceof Error && fetchError.name === 'AbortError') {
-            // This was a timeout, so we'll retry if we haven't exceeded MAX_RETRIES
-            console.error('Fetch request timed out');
-            if (retryCount >= MAX_RETRIES) {
-              throw new Error("Request to the Gemini API timed out repeatedly. The service might be experiencing high traffic or outages. Please try again later.");
+          if (fetchError instanceof Error) {
+            if (fetchError.name === 'AbortError') {
+              // Check if this was a user-initiated cancellation
+              if (fetchError.message === 'Aborted by user') {
+                throw new Error("Generation cancelled by user.");
+              }
+              
+              // This was a timeout, so we'll retry if we haven't exceeded MAX_RETRIES
+              console.error('Fetch request timed out');
+              if (retryCount >= MAX_RETRIES) {
+                throw new Error("Request to the Gemini API timed out repeatedly. The service might be experiencing high traffic or outages. Please try again later.");
+              }
+            } else {
+              // This was another kind of error, not a timeout, so we'll throw it
+              throw fetchError;
             }
           } else {
-            // This was another kind of error, not a timeout, so we'll throw it
             throw fetchError;
           }
+        } finally {
+          // Clear the abort controller reference
+          setAbortController(null);
         }
         
         retryCount++;
@@ -431,18 +475,6 @@ Revised Prompt Implementation:
                   )}
                 </div>
                 <div style={{ marginTop: 8 }}>{summary}</div>
-                <div style={{
-                  position: "absolute",
-                  bottom: 0,
-                  left: 0,
-                  right: 0,
-                  height: "30px",
-                  background: "linear-gradient(to bottom, rgba(241, 245, 249, 0), rgba(241, 245, 249, 0.9))",
-                  pointerEvents: "none",
-                  borderBottomLeftRadius: 10,
-                  borderBottomRightRadius: 10,
-                  display: summary && summary.length > 200 ? "block" : "none"
-                }}></div>
               </div>
             )}
             <form onSubmit={handlePromptSubmit} style={{ display: "flex", flexDirection: "column", gap: 16 }}>
@@ -490,7 +522,7 @@ Revised Prompt Implementation:
                       name="tag"
                       value="overcompliant"
                       checked={tag === "overcompliant"}
-                      onChange={() => { setTag("overcompliant"); setError(null); }}
+                      onChange={() => handleTagChange("overcompliant")}
                       style={{ accentColor: colors.primary }}
                     />
                     Overcompliant
@@ -514,7 +546,7 @@ Revised Prompt Implementation:
                       name="tag"
                       value="nearmiss"
                       checked={tag === "nearmiss"}
-                      onChange={() => { setTag("nearmiss"); setError(null); }}
+                      onChange={() => handleTagChange("nearmiss")}
                       style={{ accentColor: colors.primary }}
                     />
                     Near Miss
@@ -526,37 +558,60 @@ Revised Prompt Implementation:
                    : "Select a tag to get started."}
                 </span>
               </div>
-              <button
-                type="submit"
-                disabled={loading || !prompt.trim() || !summary}
-                style={{
-                  padding: "12px 0",
-                  fontSize: 18,
-                  fontWeight: 600,
-                  borderRadius: 8,
-                  border: "none",
-                  background: loading || !prompt.trim() || !summary ? colors.disabled : colors.primary,
-                  color: loading || !prompt.trim() || !summary ? colors.disabledText : "white",
-                  cursor: loading || !prompt.trim() || !summary ? "not-allowed" : "pointer",
-                  transition: "background 0.2s",
-                  boxShadow: loading || !prompt.trim() || !summary ? "none" : "0 2px 8px rgba(37, 99, 235, 0.25)"
-                }}
-              >
-                {loading ? (
-                  <span style={{ display: "inline-flex", alignItems: "center", gap: 8, justifyContent: "center" }}>
-                    <span className="spinner" style={{
-                      width: 18,
-                      height: 18,
-                      border: "3px solid rgba(255,255,255,0.3)",
-                      borderTop: "3px solid white",
-                      borderRadius: "50%",
-                      display: "inline-block",
-                      animation: "spin 1s linear infinite"
-                    }} />
-                    Loading...
-                  </span>
-                ) : "Generate Edge Case Suggestions"}
-              </button>
+              <div style={{ display: "flex", gap: 12 }}>
+                <button
+                  type="submit"
+                  disabled={loading || !prompt.trim() || !summary}
+                  style={{
+                    flex: 3,
+                    padding: "12px 0",
+                    fontSize: 18,
+                    fontWeight: 600,
+                    borderRadius: 8,
+                    border: "none",
+                    background: loading || !prompt.trim() || !summary ? colors.disabled : colors.primary,
+                    color: loading || !prompt.trim() || !summary ? colors.disabledText : "white",
+                    cursor: loading || !prompt.trim() || !summary ? "not-allowed" : "pointer",
+                    transition: "background 0.2s",
+                    boxShadow: loading || !prompt.trim() || !summary ? "none" : "0 2px 8px rgba(37, 99, 235, 0.25)"
+                  }}
+                >
+                  {loading ? (
+                    <span style={{ display: "inline-flex", alignItems: "center", gap: 8, justifyContent: "center" }}>
+                      <span className="spinner" style={{
+                        width: 18,
+                        height: 18,
+                        border: "3px solid rgba(255,255,255,0.3)",
+                        borderTop: "3px solid white",
+                        borderRadius: "50%",
+                        display: "inline-block",
+                        animation: "spin 1s linear infinite"
+                      }} />
+                      Loading...
+                    </span>
+                  ) : "Generate Edge Case Suggestions"}
+                </button>
+                {loading && (
+                  <button
+                    type="button"
+                    onClick={handleCancelGeneration}
+                    style={{
+                      flex: 1,
+                      padding: "12px 0",
+                      fontSize: 16,
+                      fontWeight: 600,
+                      borderRadius: 8,
+                      border: "none",
+                      background: colors.error,
+                      color: "white",
+                      cursor: "pointer",
+                      transition: "background 0.2s"
+                    }}
+                  >
+                    Cancel
+                  </button>
+                )}
+              </div>
             </form>
             {error && <div style={{ color: "white", background: colors.error, padding: 12, borderRadius: 8, fontWeight: 500 }}>{error}</div>}
           </>
@@ -577,7 +632,8 @@ Revised Prompt Implementation:
                 boxShadow: "0 1px 4px rgba(0,0,0,0.03)",
                 maxHeight: "150px",
                 overflowY: "auto",
-                marginBottom: 16
+                marginBottom: 16,
+                paddingBottom: 16
               }}>
                 <strong style={{ color: colors.accent }}>Focus Area Summary:</strong>
                 <div style={{ marginTop: 8 }}>{summary}</div>
@@ -601,7 +657,7 @@ Revised Prompt Implementation:
             
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
               <h3 style={{ margin: 0, color: colors.text }}>
-                {tag === "overcompliant" ? "Overcompliant" : "Near Miss"} Edge Case Suggestions
+                {selectedTagForGeneration === "overcompliant" ? "Overcompliant" : "Near Miss"} Edge Case Suggestions
               </h3>
               <button 
                 onClick={handleReset}
@@ -615,7 +671,7 @@ Revised Prompt Implementation:
                   cursor: "pointer"
                 }}
               >
-                Start Over
+                New Suggestion
               </button>
             </div>
             
@@ -628,28 +684,11 @@ Revised Prompt Implementation:
               background: "#ffffff",
               borderRadius: "8px",
               border: "1px solid #e2e8f0",
-              lineHeight: "1.5"
+              lineHeight: "1.5",
+              paddingBottom: 20
             }} 
               dangerouslySetInnerHTML={{ __html: parseMarkdown(editableResponse) }}
             />
-            
-            <button
-              onClick={handleReset}
-              style={{
-                padding: "12px 0",
-                fontSize: 18,
-                fontWeight: 600,
-                borderRadius: 8,
-                border: "none",
-                background: colors.primary,
-                color: "white",
-                cursor: "pointer",
-                transition: "background 0.2s",
-                boxShadow: "0 2px 8px rgba(37, 99, 235, 0.25)"
-              }}
-            >
-              Create New Suggestion
-            </button>
           </>
         )}
 
@@ -678,6 +717,11 @@ Revised Prompt Implementation:
           
           div::-webkit-scrollbar-thumb:hover {
             background: #94a3b8;
+          }
+          
+          /* Ensure content in scrollable areas is fully visible */
+          div[style*="overflow-y: auto"] {
+            padding-bottom: 16px !important;
           }
         `}</style>
       </div>
