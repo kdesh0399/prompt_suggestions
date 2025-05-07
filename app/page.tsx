@@ -174,7 +174,16 @@ export default function HomePage() {
         const tagSpecificInstructions = selectedTagForGeneration === "overcompliant" 
           ? `Focus specifically on creating edge cases where the model might be overcompliant with the focus area guidelines. These are scenarios where the model might be so focused on following the guidelines that it sacrifices other important aspects of a good response, such as helpfulness, naturalness, or addressing the user's actual needs. Look for situations where strict adherence to the focus area might actually lead to a worse user experience.`
           : `Focus specifically on creating "near miss" edge cases where the model might just barely fall short of correctly following the focus area guidelines. These should be subtle, nuanced scenarios that test the boundaries of the focus area in ways that might be easy to miss. The goal is to identify situations where the model might think it's following the guidelines correctly, but is actually missing some subtle aspect of the focus area requirements.`;
-          
+
+        // Check prompt length and trim if very long
+        const originalPromptLength = prompt.length;
+        // If prompt is extremely long, warn the user
+        if (originalPromptLength > 2000) {
+          setError(`Warning: Your prompt is very long (${originalPromptLength} characters), which may cause timeouts. Consider using a shorter prompt.`);
+          // Give user a chance to see the warning
+          await new Promise(resolve => setTimeout(resolve, 2000));
+        }
+        
         const fullPrompt = `Objective: Analyze the 'Original User Prompt' and provide suggestions for tweaking it to specifically target edge cases **directly related to the provided 'Focus Area Definition'**. Focus on potential **${selectedTagForGeneration === "overcompliant" ? "overcompliant" : "near miss"}** model responses based on this analysis.
 
 Inputs:
@@ -232,8 +241,8 @@ Revised Prompt Implementation:
         // Store the controller for potential cancellation
         setAbortController(controller);
         
-        // Set a 45-second timeout for the fetch call
-        const timeoutId = setTimeout(() => controller.abort(), 45000);
+        // Set a 60-second timeout for the fetch call (increased from 45 seconds)
+        const timeoutId = setTimeout(() => controller.abort(), 60000);
         
         try {
           const res = await fetch("/api/gemini", {
@@ -268,7 +277,7 @@ Revised Prompt Implementation:
               // This was a timeout, so we'll retry if we haven't exceeded MAX_RETRIES
               console.error('Fetch request timed out');
               if (retryCount >= MAX_RETRIES) {
-                throw new Error("Request to the Gemini API timed out repeatedly. The service might be experiencing high traffic or outages. Please try again later.");
+                throw new Error("The Gemini API is currently experiencing delays. Please try one of the following:\n\n1. Try again later when server load may be lower\n2. Use a shorter, more concise prompt\n3. Try a different focus area");
               }
             } else {
               // This was another kind of error, not a timeout, so we'll throw it
@@ -367,7 +376,19 @@ Revised Prompt Implementation:
             </button>
           </form>
           
-          {passwordError && <div style={{ color: "white", background: colors.error, padding: 12, borderRadius: 8, fontWeight: 500 }}>{passwordError}</div>}
+          {passwordError && (
+            <div style={{ 
+              color: "white", 
+              background: colors.error, 
+              padding: 16, 
+              borderRadius: 8, 
+              fontWeight: 500,
+              whiteSpace: "pre-wrap",
+              lineHeight: 1.5
+            }}>
+              {passwordError}
+            </div>
+          )}
         </div>
       </div>
     );
@@ -452,7 +473,19 @@ Revised Prompt Implementation:
                 {fetchingSummary ? "Looking up..." : "Lookup Focus Area"}
               </button>
             </form>
-            {summaryError && <div style={{ color: "white", background: colors.error, padding: 12, borderRadius: 8, fontWeight: 500 }}>{summaryError}</div>}
+            {summaryError && (
+              <div style={{ 
+                color: "white", 
+                background: colors.error, 
+                padding: 16, 
+                borderRadius: 8, 
+                fontWeight: 500,
+                whiteSpace: "pre-wrap",
+                lineHeight: 1.5
+              }}>
+                {summaryError}
+              </div>
+            )}
             {summary && (
               <div style={{ 
                 background: colors.summaryBg, 
@@ -613,7 +646,19 @@ Revised Prompt Implementation:
                 )}
               </div>
             </form>
-            {error && <div style={{ color: "white", background: colors.error, padding: 12, borderRadius: 8, fontWeight: 500 }}>{error}</div>}
+            {error && (
+              <div style={{ 
+                color: "white", 
+                background: colors.error, 
+                padding: 16, 
+                borderRadius: 8, 
+                fontWeight: 500,
+                whiteSpace: "pre-wrap",
+                lineHeight: 1.5
+              }}>
+                {error}
+              </div>
+            )}
           </>
         )}
 

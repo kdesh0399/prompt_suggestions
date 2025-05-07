@@ -132,7 +132,7 @@ Do not include any other explanations, introductions, or commentary outside of t
       body: JSON.stringify({
         model: 'gemini/gemini-2.5-pro-preview-03-25',
         messages: [{ role: 'user', content: completionsPrompt }],
-        temperature: 0.7,
+        temperature: 0.4,
         max_tokens: 4000
       })
     });

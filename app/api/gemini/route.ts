@@ -1,8 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
 
 const BASE_URL = "https://litellm.ml.scaleinternal.com";
-// Set a reasonable timeout - 30 seconds
-const FETCH_TIMEOUT = 30000;
+// Increase timeout to 60 seconds to give the API more time to respond
+const FETCH_TIMEOUT = 60000;
 
 // Add interfaces for type safety
 interface ConversationTurn {
@@ -51,7 +51,10 @@ export async function POST(req: NextRequest) {
             { role: 'user', content: prompt }
         ];
 
-        console.log(`Calling Gemini API with prompt: ${prompt.substring(0, 100)}...`);
+        console.log(`Calling Gemini API at ${new Date().toISOString()} with prompt length: ${prompt.length}`);
+        
+        // Record start time to track API response time
+        const startTime = Date.now();
         
         try {
             const response = await fetchWithTimeout(url, {
@@ -68,6 +71,10 @@ export async function POST(req: NextRequest) {
                 })
             }, FETCH_TIMEOUT);
 
+            // Calculate and log the response time
+            const responseTime = Date.now() - startTime;
+            console.log(`Gemini API responded in ${responseTime}ms`);
+
             if (!response.ok) {
                 const errorText = await response.text();
                 console.error(`Gemini API error: ${response.status} - ${errorText}`);
@@ -83,21 +90,29 @@ export async function POST(req: NextRequest) {
                 raw: data
             });
         } catch (fetchError) {
+            const responseTime = Date.now() - startTime;
+            
             if (fetchError instanceof Error && fetchError.name === 'AbortError') {
-                console.error('Fetch request timed out after 30 seconds');
+                console.error(`Fetch request timed out after ${responseTime}ms`);
                 return NextResponse.json({ 
-                    error: 'Request to Gemini API timed out after 30 seconds. Please try again later.' 
+                    error: `Request to Gemini API timed out after ${Math.round(responseTime/1000)} seconds. The service may be experiencing high load. Please try again later or try a simpler prompt.` 
                 }, { status: 504 });
             }
+            
+            console.error(`Fetch error after ${responseTime}ms:`, fetchError);
             throw fetchError;
         }
     } catch (error: unknown) {
         console.error('Error in Gemini API route:', error);
         // Use type assertion after checking the error type
         if (error instanceof Error) {
-            return NextResponse.json({ error: error.message || 'Unknown error' }, { status: 500 });
+            return NextResponse.json({ 
+                error: `Error communicating with Gemini API: ${error.message}. Please try again later.` 
+            }, { status: 500 });
         } else {
-            return NextResponse.json({ error: 'Unknown error occurred' }, { status: 500 });
+            return NextResponse.json({ 
+                error: 'Unknown error occurred while communicating with the Gemini API. Please try again later.' 
+            }, { status: 500 });
         }
     }
 } 
