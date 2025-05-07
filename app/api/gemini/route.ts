@@ -1,8 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
 
 const BASE_URL = "https://litellm.ml.scaleinternal.com";
-// Increase timeout to 60 seconds to give the API more time to respond
-const FETCH_TIMEOUT = 60000;
+// Increase timeout to 90 seconds to match vercel.json's 120s maxDuration
+const FETCH_TIMEOUT = 90000;
 
 // Add interfaces for type safety
 interface ConversationTurn {
@@ -27,6 +27,36 @@ async function fetchWithTimeout(url: string, options: RequestInit, timeout: numb
     clearTimeout(timeoutId);
     throw error;
   }
+}
+
+// Retry logic for external API calls
+async function fetchWithRetry(url: string, options: RequestInit, timeout: number, maxRetries = 2): Promise<Response> {
+  let lastError;
+  for (let attempt = 0; attempt <= maxRetries; attempt++) {
+    try {
+      // If not the first attempt, wait before retrying
+      if (attempt > 0) {
+        const delayMs = Math.min(1000 * Math.pow(2, attempt), 8000); // Exponential backoff up to 8 seconds
+        console.log(`Retry attempt ${attempt} after ${delayMs}ms delay`);
+        await new Promise(resolve => setTimeout(resolve, delayMs));
+      }
+      
+      return await fetchWithTimeout(url, options, timeout);
+    } catch (error) {
+      lastError = error;
+      console.error(`Attempt ${attempt} failed:`, error);
+      
+      // Don't retry if this was a 4xx error or other non-retryable error
+      if (error instanceof Error) {
+        if (error.name !== 'AbortError' && error.toString().includes('4')) {
+          throw error; // Don't retry client errors
+        }
+      }
+    }
+  }
+  
+  // If we got here, all attempts failed
+  throw lastError;
 }
 
 export async function POST(req: NextRequest) {
@@ -57,7 +87,7 @@ export async function POST(req: NextRequest) {
         const startTime = Date.now();
         
         try {
-            const response = await fetchWithTimeout(url, {
+            const response = await fetchWithRetry(url, {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json',
@@ -76,14 +106,36 @@ export async function POST(req: NextRequest) {
             console.log(`Gemini API responded in ${responseTime}ms`);
 
             if (!response.ok) {
-                const errorText = await response.text();
+                let errorText = "Unknown error";
+                try {
+                    errorText = await response.text();
+                } catch (textError) {
+                    console.error("Failed to read error response text:", textError);
+                }
                 console.error(`Gemini API error: ${response.status} - ${errorText}`);
                 return NextResponse.json({ 
                     error: `Gemini API error: ${response.status} - ${errorText.substring(0, 200)}...` 
                 }, { status: response.status });
             }
 
-            const data = await response.json();
+            let data;
+            try {
+                data = await response.json();
+            } catch (jsonError) {
+                console.error("Failed to parse JSON response:", jsonError);
+                return NextResponse.json({ 
+                    error: "Failed to parse response from Gemini API. The service may be experiencing issues." 
+                }, { status: 500 });
+            }
+            
+            // Validate response format
+            if (!data.choices || !data.choices[0] || !data.choices[0].message) {
+                console.error("Invalid response format from Gemini API:", data);
+                return NextResponse.json({ 
+                    error: "Received an invalid response format from Gemini API." 
+                }, { status: 500 });
+            }
+            
             return NextResponse.json({
                 modelId: 'gemini/gemini-2.5-pro-preview-03-25',
                 response: data.choices?.[0]?.message?.content || '',
@@ -99,8 +151,13 @@ export async function POST(req: NextRequest) {
                 }, { status: 504 });
             }
             
+            // Handle other network errors
             console.error(`Fetch error after ${responseTime}ms:`, fetchError);
-            throw fetchError;
+            const errorMessage = fetchError instanceof Error 
+                ? `Network error communicating with Gemini API: ${fetchError.message}` 
+                : "Network error communicating with Gemini API";
+            
+            return NextResponse.json({ error: errorMessage }, { status: 503 });
         }
     } catch (error: unknown) {
         console.error('Error in Gemini API route:', error);

@@ -157,7 +157,7 @@ export default function HomePage() {
     setSelectedTagForGeneration(tag);
     
     // Maximum number of retries
-    const MAX_RETRIES = 2;
+    const MAX_RETRIES = 3;  // Increased from 2 to 3
     let retryCount = 0;
     let success = false;
     
@@ -165,9 +165,9 @@ export default function HomePage() {
       try {
         if (retryCount > 0) {
           // Let the user know we're retrying
-          setError(`Request timed out. Retrying (${retryCount}/${MAX_RETRIES})...`);
-          // Wait 1 second before retrying
-          await new Promise(resolve => setTimeout(resolve, 1000));
+          setError(`Request failed. Retrying (${retryCount}/${MAX_RETRIES})...`);
+          // Wait a bit longer between retries for potentially improved success rate
+          await new Promise(resolve => setTimeout(resolve, 2000));
         }
         
         // Different prompts based on selected tag for generation (using the stored value)
@@ -241,10 +241,15 @@ Revised Prompt Implementation:
         // Store the controller for potential cancellation
         setAbortController(controller);
         
-        // Set a 60-second timeout for the fetch call (increased from 45 seconds)
+        // Set a 60-second timeout for the fetch call
         const timeoutId = setTimeout(() => controller.abort(), 60000);
         
         try {
+          // Check for network connectivity before making the request
+          if (!navigator.onLine) {
+            throw new Error("You appear to be offline. Please check your internet connection and try again.");
+          }
+          
           const res = await fetch("/api/gemini", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
@@ -255,8 +260,16 @@ Revised Prompt Implementation:
           clearTimeout(timeoutId);
           
           if (!res.ok) {
-            const data = await res.json();
-            throw new Error(data.error || `Server responded with status: ${res.status}`);
+            // Try to get the error body, but handle cases where it might not be valid JSON
+            let errorMessage;
+            try {
+              const data = await res.json();
+              errorMessage = data.error || `Server responded with status: ${res.status}`;
+            } catch (parseError) {
+              // Handle case where error response isn't valid JSON
+              errorMessage = `Server responded with status ${res.status}. The service may be temporarily unavailable.`;
+            }
+            throw new Error(errorMessage);
           }
           
           const data = await res.json();
@@ -268,7 +281,16 @@ Revised Prompt Implementation:
           clearTimeout(timeoutId);
           
           if (fetchError instanceof Error) {
-            if (fetchError.name === 'AbortError') {
+            // Network errors
+            if (fetchError.name === 'TypeError' && fetchError.message.includes('Failed to fetch')) {
+              console.error('Network error occurred:', fetchError);
+              if (retryCount >= MAX_RETRIES) {
+                throw new Error("Network error: Unable to connect to the server. Please check your internet connection and try again later.");
+              }
+              // Continue with retry loop for network errors
+            }
+            // Abort errors
+            else if (fetchError.name === 'AbortError') {
               // Check if this was a user-initiated cancellation
               if (fetchError.message === 'Aborted by user') {
                 throw new Error("Generation cancelled by user.");
