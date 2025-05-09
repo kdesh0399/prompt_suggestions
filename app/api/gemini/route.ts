@@ -97,7 +97,7 @@ export async function POST(req: NextRequest) {
                     model: 'anthropic/claude-3-7-sonnet-latest',
                     messages: messages,
                     temperature: 0.5,
-                    max_tokens: 8000
+                    max_tokens: 7000
                 })
             }, FETCH_TIMEOUT);
 
