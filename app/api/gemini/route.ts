@@ -94,7 +94,7 @@ export async function POST(req: NextRequest) {
                     'Authorization': `Bearer ${apiKey}`
                 },
                 body: JSON.stringify({
-                    model: 'gpt-4.1-nano',
+                    model: 'anthropic/claude-3-7-sonnet-latest',
                     messages: messages,
                     temperature: 0.3,
                     max_tokens: 8000
@@ -137,7 +137,7 @@ export async function POST(req: NextRequest) {
             }
             
             return NextResponse.json({
-                modelId: 'gpt-4.1-nano',
+                modelId: 'anthropic/claude-3-7-sonnet-latest',
                 response: data.choices?.[0]?.message?.content || '',
                 raw: data
             });
