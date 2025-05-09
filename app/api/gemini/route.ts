@@ -96,7 +96,7 @@ export async function POST(req: NextRequest) {
                 body: JSON.stringify({
                     model: 'anthropic/claude-3-7-sonnet-latest',
                     messages: messages,
-                    temperature: 0.3,
+                    temperature: 0.5,
                     max_tokens: 8000
                 })
             }, FETCH_TIMEOUT);
