@@ -94,7 +94,7 @@ export async function POST(req: NextRequest) {
                     'Authorization': `Bearer ${apiKey}`
                 },
                 body: JSON.stringify({
-                    model: 'gpt-4.1-nano',
+                    model: 'gemini/gemini-2.0-flash',
                     messages: messages,
                     temperature: 0.3,
                     max_tokens: 8000
@@ -137,7 +137,7 @@ export async function POST(req: NextRequest) {
             }
             
             return NextResponse.json({
-                modelId: 'gpt-4.1-nano',
+                modelId: 'gemini/gemini-2.0-flash',
                 response: data.choices?.[0]?.message?.content || '',
                 raw: data
             });
