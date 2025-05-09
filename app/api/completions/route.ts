@@ -130,7 +130,7 @@ Do not include any other explanations, introductions, or commentary outside of t
         'Authorization': `Bearer ${apiKey}`
       },
       body: JSON.stringify({
-        model: 'gemini/gemini-2.5-pro-preview-03-25',
+        model: 'gpt-4.1-nano',
         messages: [{ role: 'user', content: completionsPrompt }],
         temperature: 0.4,
         max_tokens: 4000
