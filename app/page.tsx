@@ -232,7 +232,7 @@ Suggestions for Targeting ${selectedTagForGeneration === "overcompliant" ? "Over
 
 [If you add a fourth suggestion, follow the same exact format]
 
-IMPORTANT: DO NOT use any markdown or formatting symbols. No asterisks (*), no bold text markup (**), no other special characters for formatting. Return COMPLETELY plain text only.
+IMPORTANT: DO NOT use any markdown or formatting symbols. No asterisks (*), no bold text markup (**), no other special characters for formatting. Return COMPLETELY plain text only. Provide suggestions at first only. DO NOT DIRECTLY EDIT THE PROMPT UNTIL THE END WHERE YOU IMPLEMENT BEST SUGGESTION.
 
 Revised Prompt Implementation:
 [A concise, focused revised prompt that implements ONLY the best suggestion. Keep it natural and within 2-3 sentences whenever possible.]`;
